@@ -1,0 +1,95 @@
+#include "stm32f10x.h"
+
+//配置NVIC
+void NVIC_Config(void){
+	NVIC_InitTypeDef NVIC_InitStructure;
+	NVIC_PriorityGroupConfig(NVIC_PriorityGroup_2);
+	NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;//USART相应中断位于中断向量表，与EXTI中断地位相当，不需自定义，配置简单
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+}
+
+//配置串口，因为串口与GPIO复用，所以也要配置GPIO
+void USART_Config(void){
+	GPIO_InitTypeDef GPIO_InitStructure;
+	USART_InitTypeDef USART_InitStructure;
+	
+	//打开GPIO和USART的时钟
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+	RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE);
+	
+	// USART的TX与GPIOA 9 复用。配置为推挽复用模式
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9;
+	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+	
+	//USART的RX与GPIOA 10 复用。配置为浮空输入模式
+	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+	GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10;
+	GPIO_Init(GPIOA, &GPIO_InitStructure);
+	
+	//配置USART1的参数
+	USART_InitStructure.USART_BaudRate = 115200;// 配置波特率
+	USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;// 配置硬件流控制	
+	USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;// 配置工作模式，收发一起	
+	USART_InitStructure.USART_Parity = USART_Parity_No;//配置校验位	
+	USART_InitStructure.USART_StopBits = USART_StopBits_1;//配置停止位
+	USART_InitStructure.USART_WordLength = USART_WordLength_8b;//配置数据字长
+	USART_Init(USART1, &USART_InitStructure);// 完成串口的初始化配置
+	
+	NVIC_Config();//配置NVIC
+	
+	USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);//使能接收中断
+	USART_Cmd(USART1, ENABLE);//使能串口
+}
+
+//发送一个Byte
+void Usart_SendByte( USART_TypeDef * USARTx, uint8_t ch)
+{
+	USART_SendData(USARTx,ch); //发送一个字节数据到 USART
+	while (USART_GetFlagStatus(USARTx, USART_FLAG_TXE) == RESET);//等待发送数据寄存器为空
+}
+
+//发送一个字符串
+void USART_SendStr(USART_TypeDef *USARTx,char *str)
+{
+	uint8_t i = 0;
+	do
+	{
+		Usart_SendByte(USART1,*(str+i));
+		i++;
+	}while( *(str+i) != '\0');
+	
+	//等待发送完成
+	while (USART_GetFlagStatus(USARTx, USART_FLAG_TC) == RESET);
+}
+
+int main(void)
+{	
+	USART_Config();
+	USART_SendStr(USART1,"HELLO WORLD!");
+	while(1)
+	{
+	}
+}
+
+
+/**
+如下代码置于stm32f10x_it.c中，是为中断响应程序
+
+extern void USART_SendStr(USART_TypeDef*,char*);
+
+void USART1_IRQHandler(){
+	uint8_t ucTemp;
+	if (USART_GetITStatus(USART1,USART_IT_RXNE) != RESET) 
+	{
+		ucTemp = USART_ReceiveData( USART1 );
+	}
+	if(ucTemp > 53){
+		USART_SendStr(USART1,"\nreceive");
+	}
+}
+**/
